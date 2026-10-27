@@ -474,6 +474,40 @@ func TestBuildSnapshot(t *testing.T) {
 	assert.Equal(t, "B", restored.Branches[1].Branch)
 }
 
+// A merged branch deleted by `sync --prune` stays in the metadata but has no
+// ref, so it's left out of the snapshot instead of failing rev-parse.
+func TestBuildSnapshot_SkipsPrunedMergedBranch(t *testing.T) {
+	s := stack.Stack{
+		Trunk: stack.BranchRef{Branch: "main"},
+		Branches: []stack.BranchRef{
+			{Branch: "pruned", PullRequest: &stack.PullRequestRef{Number: 1, Merged: true}},
+			{Branch: "kept", PullRequest: &stack.PullRequestRef{Number: 2, Merged: true}},
+			{Branch: "open"},
+		},
+	}
+	mock := &git.MockOps{
+		BranchExistsFn: func(name string) (bool, error) { return name != "pruned", nil },
+		RevParseMultiFn: func(refs []string) ([]string, error) {
+			shas := make([]string, len(refs))
+			for i, ref := range refs {
+				if ref == "pruned" {
+					return nil, fmt.Errorf("unknown revision %s", ref)
+				}
+				shas[i] = "sha-" + ref
+			}
+			return shas, nil
+		},
+	}
+	restore := git.SetOps(mock)
+	defer restore()
+
+	snap, err := BuildSnapshot(&s)
+	require.NoError(t, err)
+	require.Len(t, snap.Branches, 2)
+	assert.Equal(t, BranchSnapshot{Name: "kept", TipSHA: "sha-kept", Position: 1}, snap.Branches[0])
+	assert.Equal(t, BranchSnapshot{Name: "open", TipSHA: "sha-open", Position: 2}, snap.Branches[1])
+}
+
 // ─── BuildPlan ───────────────────────────────────────────────────────────────
 
 func TestBuildPlan_VariousActions(t *testing.T) {
