@@ -15,10 +15,20 @@ import (
 
 // BuildSnapshot captures the current state of the stack for unwind/recovery.
 func BuildSnapshot(s *stack.Stack) (Snapshot, error) {
-	// Collect all branch names
-	names := make([]string, len(s.Branches))
-	for i, b := range s.Branches {
-		names[i] = b.Branch
+	// Collect branch names. A merged branch that `sync --prune` deleted has no
+	// ref to snapshot or restore; its metadata is kept in StackMetadata.
+	names := make([]string, 0, len(s.Branches))
+	for _, b := range s.Branches {
+		if b.IsMerged() {
+			exists, err := git.BranchExists(b.Branch)
+			if err != nil {
+				return Snapshot{}, fmt.Errorf("checking branch %s: %w", b.Branch, err)
+			}
+			if !exists {
+				continue
+			}
+		}
+		names = append(names, b.Branch)
 	}
 
 	// Resolve all SHAs
@@ -28,12 +38,14 @@ func BuildSnapshot(s *stack.Stack) (Snapshot, error) {
 	}
 
 	// Build branch snapshots
-	branches := make([]BranchSnapshot, len(s.Branches))
+	branches := make([]BranchSnapshot, 0, len(names))
 	for i, b := range s.Branches {
-		branches[i] = BranchSnapshot{
-			Name:     b.Branch,
-			TipSHA:   shaMap[b.Branch],
-			Position: i,
+		if sha, ok := shaMap[b.Branch]; ok {
+			branches = append(branches, BranchSnapshot{
+				Name:     b.Branch,
+				TipSHA:   sha,
+				Position: i,
+			})
 		}
 	}
 
