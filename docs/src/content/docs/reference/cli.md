@@ -445,6 +445,8 @@ gh stack rebase [flags] [branch]
 
 Date-preserving rebases explicitly use Git's merge backend so the setting persists across conflicts. `--continue` uses the saved native rebase settings; it does not resend start-only date options.
 
+A conflict on a commit the new base already has (same patch, or same author, author date and subject) is resolved by dropping that commit, which keeps the base's side. This happens when a branch was stacked on an older copy of its parent. Only conflicts in the branch's own commits stop the rebase.
+
 | Argument | Description |
 |----------|-------------|
 | `[branch]` | Target branch (defaults to the current branch) |

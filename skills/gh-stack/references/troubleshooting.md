@@ -30,6 +30,11 @@ time the same conflict appears — which is common, since a change low in the st
 every branch above it. Without `rerere`, repeated conflicts may need manual resolution on each
 affected layer.
 
+A conflict on a commit the new base already has (the branch was stacked on an older copy of its
+parent, so the parent's commits replay onto their newer copies) is resolved by dropping that commit
+and keeping the base's side. A commit counts as already there if it has the same patch, or the same
+author, author date and subject. Only conflicts in the branch's own commits stop the rebase.
+
 ## After a squash merge
 
 A squash merge replaces the branch's commits with one new commit, so the originals no longer exist
