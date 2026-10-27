@@ -30,6 +30,11 @@ time the same conflict appears — which is common, since a change low in the st
 every branch above it. Without `rerere`, repeated conflicts may need manual resolution on each
 affected layer.
 
+A conflicting commit that the new base already contains (same patch ID) is dropped automatically and
+reported as `Dropped <sha> <subject>: already in the new base`. This happens when a branch was stacked
+on an older copy of its parent. Commits whose patch differs from the base's copy still stop for manual
+resolution.
+
 ## After a squash merge
 
 A squash merge replaces the branch's commits with one new commit, so the originals no longer exist
