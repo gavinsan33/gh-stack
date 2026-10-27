@@ -1917,3 +1917,44 @@ func TestIntegration_Push_FallsBackWithoutPushOptionSupport(t *testing.T) {
 	require.NoError(t, d.Push("origin", []string{"b1"}, true, true))
 	assert.Equal(t, gitExec(t, cloneDir, "rev-parse", "b1"), remoteBranchSHA(t, bareDir, "b1"))
 }
+
+// A branch stacked on an older copy of its parent replays the parent's commits
+// onto their newer copies. Those conflicts are resolved by dropping the old
+// copy; a conflict in the branch's own commit still stops the rebase.
+func TestIntegration_RebaseDropsCommitsAlreadyInBase(t *testing.T) {
+	ops, dir := setupWorktreeRepo(t)
+	committed := 0
+	commit := func(date, file, content, msg string) {
+		// Distinct committer dates keep the two copies distinct commits.
+		committed++
+		t.Setenv("GIT_AUTHOR_DATE", date)
+		t.Setenv("GIT_COMMITTER_DATE", fmt.Sprintf("2021-01-01T00:00:%02dZ", committed))
+		writeFile(t, dir, file, content)
+		gitExec(t, dir, "add", ".")
+		gitExec(t, dir, "commit", "-qm", msg)
+	}
+	base := gitExec(t, dir, "rev-parse", "HEAD")
+	gitExec(t, dir, "checkout", "-qb", "feature")
+	commit("2020-01-01T00:00:01Z", "f.txt", "x\n", "same patch")
+	commit("2020-01-01T00:00:02Z", "f.txt", "y\n", "edited upstream")
+	commit("2020-01-01T00:00:03Z", "g.txt", "mine\n", "own commit")
+	gitExec(t, dir, "checkout", "-q", "main")
+	commit("2020-01-01T00:00:01Z", "f.txt", "x\n", "same patch")
+	commit("2020-01-01T00:00:02Z", "f.txt", "y2\n", "edited upstream")
+	commit("2020-01-01T00:00:04Z", "g.txt", "theirs\n", "later")
+
+	require.Error(t, ops.RebaseOnto("main", base, "feature", RebaseOpts{}))
+	conflicts, err := ops.ConflictedFiles()
+	require.NoError(t, err)
+	assert.Equal(t, []string{"g.txt"}, conflicts, "only the branch's own commit should stop")
+	assert.Equal(t, "own commit", gitExec(t, dir, "log", "-1", "--format=%s", "REBASE_HEAD"))
+
+	writeFile(t, dir, "g.txt", "resolved\n")
+	require.NoError(t, ops.StageAll())
+	require.NoError(t, ops.RebaseContinue(RebaseOpts{}))
+	assert.Equal(t, "own commit\nlater\nedited upstream\nsame patch\ninitial commit",
+		gitExec(t, dir, "log", "--format=%s", "feature"))
+	data, err := os.ReadFile(filepath.Join(dir, "f.txt"))
+	require.NoError(t, err)
+	assert.Equal(t, "y2\n", string(data), "the base's newer copy wins")
+}

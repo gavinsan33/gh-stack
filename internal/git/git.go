@@ -193,7 +193,21 @@ func (d *defaultOps) tryAutoResolveRebase(originalErr error, opts RebaseOpts) er
 			return errors.Join(originalErr, err)
 		}
 		if len(conflicts) > 0 {
-			return originalErr
+			dup, err := d.rebaseHeadAlreadyApplied()
+			if err != nil {
+				return errors.Join(originalErr, err)
+			}
+			if dup == "" {
+				return originalErr
+			}
+			// The new base already has this commit; keep its side.
+			fmt.Fprintf(os.Stderr, "Dropped %s: already in the new base\n", dup)
+			if err := d.rebaseSkipOnce(); err == nil {
+				return nil
+			} else {
+				originalErr = err
+			}
+			continue
 		}
 		step, err := d.rebaseStep()
 		if err != nil {
@@ -213,6 +227,54 @@ func (d *defaultOps) tryAutoResolveRebase(originalErr error, opts RebaseOpts) er
 		// if rerere resolved that one too.
 	}
 	return originalErr
+}
+
+// rebaseHeadAlreadyApplied returns "<short sha> <subject>" when the commit a
+// stopped rebase is applying is already in HEAD, else "". That happens when a
+// branch was stacked on an older copy of its parent: the parent's commits are
+// replayed onto their own newer copies. A copy counts if it has the same
+// patch, or the same author, author date and subject (its patch changed when
+// it was rebased with conflicts of its own).
+func (d *defaultOps) rebaseHeadAlreadyApplied() (string, error) {
+	pick, err := d.run("rev-parse", "-q", "--verify", "REBASE_HEAD^{commit}")
+	if err != nil || pick == "" {
+		return "", nil
+	}
+	const identity = "--format=%an%x00%ae%x00%at%x00%s"
+	id, err := d.run("log", "-1", identity, pick)
+	if err != nil {
+		return "", err
+	}
+	name := pick[:min(len(pick), 7)] + " " + id[strings.LastIndexByte(id, 0)+1:]
+	if applied, err := d.IsAncestor(pick, "HEAD"); err != nil {
+		return "", err
+	} else if applied {
+		return name, nil
+	}
+	// A root commit has no parent to limit git cherry; fall through.
+	if out, err := d.run("cherry", "HEAD", pick, pick+"^"); err == nil && strings.HasPrefix(out, "-") {
+		return name, nil
+	}
+	upstream, err := d.run("log", identity, pick+"..HEAD")
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(upstream, "\n") {
+		if line == id {
+			return name, nil
+		}
+	}
+	return "", nil
+}
+
+// rebaseSkipOnce drops the commit a stopped rebase is applying.
+func (d *defaultOps) rebaseSkipOnce() error {
+	cmd, err := d.command(append(rebaseArgs(RebaseOpts{}), "--skip")...)
+	if err != nil {
+		return err
+	}
+	cmd.Env = append(cmd.Environ(), "GIT_EDITOR=true")
+	return cmd.Run()
 }
 
 func (d *defaultOps) rebaseStep() (string, error) {
