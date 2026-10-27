@@ -4169,3 +4169,53 @@ func testBaseRetargetReviewCases(t *testing.T, run func(*config.Config, bool) er
 		})
 	}
 }
+
+// A child recorded on an outdated copy of its parent replays the parent's
+// commits onto their newer copies. Each conflicts where the parent changed
+// later; the rebase drops them instead of stopping, keeps the child's own
+// commits, and reports each drop.
+func TestRebase_DropsCommitsAlreadyInParent(t *testing.T) {
+	dir := t.TempDir()
+	issue250Git(t, dir, "init", "-b", "main")
+	issue250Git(t, dir, "config", "commit.gpgSign", "false")
+	issue250Git(t, dir, "config", "core.hooksPath", os.DevNull)
+	commit := func(file, content, subject string) {
+		issue250WriteFile(t, dir, file, content)
+		issue250Git(t, dir, "add", ".")
+		issue250Git(t, dir, "commit", "-m", subject)
+	}
+	commit("base.txt", "base\n", "base")
+	main := issue250Git(t, dir, "rev-parse", "main")
+	issue250Git(t, dir, "checkout", "-b", "parent")
+	commit("shared.txt", "one\n", "parent one")
+	commit("shared.txt", "two\n", "parent two")
+	issue250Git(t, dir, "checkout", "-b", "child", "main")
+	commit("setup.txt", "setup\n", "child setup")
+	issue250Git(t, dir, "cherry-pick", "main..parent")
+	commit("child.txt", "child\n", "child only")
+	issue250Git(t, dir, "checkout", "parent")
+	commit("shared.txt", "three\n", "parent three")
+	writeStackFile(t, filepath.Join(dir, ".git"), stack.Stack{
+		Trunk: stack.BranchRef{Branch: "main", Head: main},
+		Branches: []stack.BranchRef{
+			{Branch: "parent", Head: issue250Git(t, dir, "rev-parse", "parent"), Base: main},
+			{Branch: "child", Head: issue250Git(t, dir, "rev-parse", "child"), Base: main},
+		},
+	})
+	withIssue250Repo(t, dir)
+	cfg, outR, errR := config.NewTestConfig()
+	cfg.GitHubClientOverride = &github.MockClient{}
+	defer outR.Close()
+	defer errR.Close()
+
+	require.NoError(t, runRebase(cfg, &rebaseOptions{noTrunk: true}))
+	_ = cfg.Out.Close()
+	_ = cfg.Err.Close()
+	output, _ := io.ReadAll(errR)
+
+	assert.Equal(t, "child only\nchild setup\nparent three\nparent two\nparent one\nbase",
+		issue250Git(t, dir, "log", "--format=%s", "child"))
+	assert.Equal(t, "three", issue250Git(t, dir, "show", "child:shared.txt"))
+	assert.Contains(t, string(output), "parent one: already in the new base")
+	assert.Contains(t, string(output), "parent two: already in the new base")
+}

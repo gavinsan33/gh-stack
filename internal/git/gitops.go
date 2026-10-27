@@ -17,6 +17,9 @@ import (
 // RebaseOpts holds optional parameters for git rebase operations.
 type RebaseOpts struct {
 	CommitterDateIsAuthorDate bool
+	// Notify, if set, receives progress the caller should show, such as a
+	// commit dropped because the new base already contains it.
+	Notify func(format string, args ...any)
 }
 
 // ErrRemoteBranchNotFound indicates that a requested branch does not exist on

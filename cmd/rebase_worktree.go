@@ -229,7 +229,7 @@ func continueWorktreeRebase(cfg *config.Config, dir string, state *rebaseState) 
 				return fmt.Errorf("checking rebase state: %w", err)
 			}
 			if inProgress {
-				if err := ops.RebaseContinue(git.RebaseOpts{CommitterDateIsAuthorDate: state.CommitterDateIsAuthorDate}); err != nil {
+				if err := ops.RebaseContinue(git.RebaseOpts{CommitterDateIsAuthorDate: state.CommitterDateIsAuthorDate, Notify: cfg.Infof}); err != nil {
 					cfg.Errorf("rebase continue failed: %v", err)
 					printWorktreeConflict(cfg, state, state.RebaseBase)
 					return ErrConflict

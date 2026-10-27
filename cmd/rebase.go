@@ -428,7 +428,7 @@ func continueRebase(cfg *config.Config, gitDir string) error {
 		return fmt.Errorf("checking rebase state: %w", err)
 	}
 	if inProgress {
-		rebaseOpts := git.RebaseOpts{CommitterDateIsAuthorDate: state.CommitterDateIsAuthorDate}
+		rebaseOpts := git.RebaseOpts{CommitterDateIsAuthorDate: state.CommitterDateIsAuthorDate, Notify: cfg.Infof}
 		if err := git.RebaseContinue(rebaseOpts); err != nil {
 			return fmt.Errorf("rebase continue failed — resolve remaining conflicts and try again: %w", err)
 		}

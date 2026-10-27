@@ -1917,3 +1917,55 @@ func TestIntegration_Push_FallsBackWithoutPushOptionSupport(t *testing.T) {
 	require.NoError(t, d.Push("origin", []string{"b1"}, true, true))
 	assert.Equal(t, gitExec(t, cloneDir, "rev-parse", "b1"), remoteBranchSHA(t, bareDir, "b1"))
 }
+
+// A commit the new base already has (same patch ID) is dropped when it
+// conflicts, and the caller is told. A copy whose patch changed is not proof
+// it was applied, so that conflict still stops, as does one in the branch's
+// own commit.
+func TestIntegration_RebaseDropsCommitsAlreadyInBase(t *testing.T) {
+	tests := []struct {
+		name         string
+		baseCopy     string // content the new base's copy of the commit writes
+		wantStopAt   string
+		wantConflict string
+		wantDropped  bool
+	}{
+		{name: "same patch", baseCopy: "x\n", wantStopAt: "own commit", wantConflict: "g.txt", wantDropped: true},
+		{name: "changed patch", baseCopy: "x2\n", wantStopAt: "copied commit", wantConflict: "f.txt"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ops, dir := setupWorktreeRepo(t)
+			commit := func(file, content, msg string) {
+				writeFile(t, dir, file, content)
+				gitExec(t, dir, "add", ".")
+				gitExec(t, dir, "commit", "-qm", msg)
+			}
+			base := gitExec(t, dir, "rev-parse", "HEAD")
+			gitExec(t, dir, "checkout", "-qb", "feature")
+			commit("setup.txt", "setup\n", "setup")
+			commit("f.txt", "x\n", "copied commit")
+			commit("g.txt", "mine\n", "own commit")
+			gitExec(t, dir, "checkout", "-q", "main")
+			commit("f.txt", tt.baseCopy, "copied commit")
+			commit("f.txt", "later\n", "later f")
+			commit("g.txt", "theirs\n", "later g")
+
+			var notes []string
+			opts := RebaseOpts{Notify: func(format string, args ...any) {
+				notes = append(notes, fmt.Sprintf(format, args...))
+			}}
+			require.Error(t, ops.RebaseOnto("main", base, "feature", opts))
+			conflicts, err := ops.ConflictedFiles()
+			require.NoError(t, err)
+			assert.Equal(t, []string{tt.wantConflict}, conflicts)
+			assert.Equal(t, tt.wantStopAt, gitExec(t, dir, "log", "-1", "--format=%s", "REBASE_HEAD"))
+			if tt.wantDropped {
+				require.Len(t, notes, 1)
+				assert.Regexp(t, `^Dropped [0-9a-f]{7,} copied commit: already in the new base$`, notes[0])
+			} else {
+				assert.Empty(t, notes)
+			}
+		})
+	}
+}

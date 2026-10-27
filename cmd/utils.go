@@ -1605,7 +1605,7 @@ func rebaseStep(opts cascadeRebaseOpts, branch string, absIdx int, base, oldBase
 	if err != nil {
 		return false, fmt.Errorf("preparing %s: %w", branch, err)
 	}
-	rebaseOpts := git.RebaseOpts{CommitterDateIsAuthorDate: opts.CommitterDateIsAuthorDate}
+	rebaseOpts := git.RebaseOpts{CommitterDateIsAuthorDate: opts.CommitterDateIsAuthorDate, Notify: opts.Cfg.Infof}
 	if useOnto {
 		err = ops.RebaseOnto(executionBase, oldBase, branch, rebaseOpts)
 	} else {

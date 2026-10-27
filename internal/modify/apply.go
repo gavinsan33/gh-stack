@@ -297,7 +297,7 @@ func rebaseRemaining(cfg *config.Config, dir string, state *StateFile, s *stack.
 		}
 		state.RemainingBranches = append([]string{}, branches[i+1:]...)
 		state.AffectsPRs = state.AffectsPRs || branch.PullRequest != nil
-		if conflict, err := rebaseInOwner(dir, state, s, sf, name, newBase, oldBase); err != nil {
+		if conflict, err := rebaseInOwner(cfg, dir, state, s, sf, name, newBase, oldBase); err != nil {
 			return moved, conflict, err
 		}
 		state.ConflictBranch, state.ConflictType = "", "cascade"
@@ -310,7 +310,7 @@ func rebaseRemaining(cfg *config.Config, dir string, state *StateFile, s *stack.
 	return moved, nil, nil
 }
 
-func rebaseInOwner(dir string, state *StateFile, s *stack.Stack, sf *stack.StackFile, name, newBase, oldBase string) (*modifyview.ConflictInfo, error) {
+func rebaseInOwner(cfg *config.Config, dir string, state *StateFile, s *stack.Stack, sf *stack.StackFile, name, newBase, oldBase string) (*modifyview.ConflictInfo, error) {
 	state.ConflictBranch, state.ConflictType = name, "rebase"
 	_, err := startRefMutation(dir, state, name)
 	if err != nil {
@@ -321,7 +321,7 @@ func rebaseInOwner(dir string, state *StateFile, s *stack.Stack, sf *stack.Stack
 		state.Phase, state.ConflictType = PhaseConflict, "rebase_start"
 		return nil, errors.Join(err, saveProgress(dir, state, s, sf))
 	}
-	if err := ops.RebaseOnto(newBase, oldBase, name, git.RebaseOpts{}); err != nil {
+	if err := ops.RebaseOnto(newBase, oldBase, name, git.RebaseOpts{Notify: cfg.Infof}); err != nil {
 		state.Phase = PhaseConflict
 		if git.IsRebaseStartError(err) {
 			state.ConflictType = "rebase_start"
@@ -603,7 +603,7 @@ func ContinueApply(
 		}
 	case "", "rebase":
 		// Rebase conflict
-		if err := ops.RebaseContinue(git.RebaseOpts{}); err != nil {
+		if err := ops.RebaseContinue(git.RebaseOpts{Notify: cfg.Infof}); err != nil {
 			return errors.Join(fmt.Errorf("rebase continue failed in %s — resolve remaining conflicts and try again: %w", path, err),
 				saveNativeConflict(gitDir, state, s, sf, ops))
 		}

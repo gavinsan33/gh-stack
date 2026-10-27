@@ -174,10 +174,11 @@ func (d *defaultOps) rebaseContinueOnce(_ RebaseOpts) error {
 	return cmd.Run()
 }
 
-// tryAutoResolveRebase checks whether rerere has resolved all conflicts
-// from a failed rebase. If so, it auto-continues the rebase (potentially
-// multiple times for multi-commit rebases). Returns originalErr if any
-// conflicts remain that need manual resolution.
+// tryAutoResolveRebase auto-continues a stopped rebase whose conflicts need no
+// decision: rerere already resolved them, or the commit being applied is
+// already in the new base and is dropped. It repeats for each commit that
+// stops. Returns originalErr if any conflicts remain that need manual
+// resolution.
 func (d *defaultOps) tryAutoResolveRebase(originalErr error, opts RebaseOpts) error {
 	previousStep := ""
 	for i := 0; i < 1000; i++ {
@@ -193,7 +194,22 @@ func (d *defaultOps) tryAutoResolveRebase(originalErr error, opts RebaseOpts) er
 			return errors.Join(originalErr, err)
 		}
 		if len(conflicts) > 0 {
-			return originalErr
+			applied, err := d.rebaseHeadAlreadyApplied()
+			if err != nil {
+				return errors.Join(originalErr, err)
+			}
+			if applied == "" {
+				return originalErr
+			}
+			if opts.Notify != nil {
+				opts.Notify("Dropped %s: already in the new base", applied)
+			}
+			if err := d.rebaseSkipOnce(); err == nil {
+				return nil
+			} else {
+				originalErr = err
+			}
+			continue
 		}
 		step, err := d.rebaseStep()
 		if err != nil {
@@ -213,6 +229,45 @@ func (d *defaultOps) tryAutoResolveRebase(originalErr error, opts RebaseOpts) er
 		// if rerere resolved that one too.
 	}
 	return originalErr
+}
+
+// rebaseHeadAlreadyApplied returns the abbreviated hash and subject of the
+// commit a stopped rebase is applying when HEAD already contains it, either
+// as an ancestor or as a commit with the same patch ID, the test git rebase
+// itself uses to skip cherry-picks. Otherwise it returns "".
+//
+// `rebase --onto <new> <old>` only compares against <old>, so a branch
+// recorded on an outdated copy of its parent replays the parent's commits
+// onto their newer copies, and each one conflicts wherever the parent
+// changed later. Dropping it keeps the new base's version.
+func (d *defaultOps) rebaseHeadAlreadyApplied() (string, error) {
+	pick, err := d.run("rev-parse", "--quiet", "--verify", "REBASE_HEAD^{commit}")
+	if err != nil || pick == "" {
+		return "", nil // Nothing is being applied, e.g. a stopped exec.
+	}
+	applied, err := d.IsAncestor(pick, "HEAD")
+	if err != nil {
+		return "", err
+	}
+	if !applied {
+		// A root commit has no parent to bound the comparison.
+		out, err := d.run("cherry", "HEAD", pick, pick+"^")
+		applied = err == nil && strings.HasPrefix(out, "-")
+	}
+	if !applied {
+		return "", nil
+	}
+	return d.run("log", "-1", "--format=%h %s", pick)
+}
+
+// rebaseSkipOnce drops the commit a stopped rebase is applying.
+func (d *defaultOps) rebaseSkipOnce() error {
+	cmd, err := d.command(append(rebaseArgs(RebaseOpts{}), "--skip")...)
+	if err != nil {
+		return err
+	}
+	cmd.Env = append(cmd.Environ(), "GIT_EDITOR=true")
+	return cmd.Run()
 }
 
 func (d *defaultOps) rebaseStep() (string, error) {

@@ -42,7 +42,7 @@ func runActions(cfg *config.Config, dir string, state *StateFile, s *stack.Stack
 				return conflict, err
 			}
 		case "fold_rebase":
-			if conflict, err := normalizeFoldReceiver(dir, state, s, sf, action); err != nil {
+			if conflict, err := normalizeFoldReceiver(cfg, dir, state, s, sf, action); err != nil {
 				return conflict, err
 			}
 			cfg.Successf("Rebased %s to exclude dropped branch %s", action.Branch, action.Target)
@@ -76,7 +76,7 @@ func runActions(cfg *config.Config, dir string, state *StateFile, s *stack.Stack
 	return nil, saveProgress(dir, state, s, sf)
 }
 
-func normalizeFoldReceiver(dir string, state *StateFile, s *stack.Stack, sf *stack.StackFile, action Action) (*modifyview.ConflictInfo, error) {
+func normalizeFoldReceiver(cfg *config.Config, dir string, state *StateFile, s *stack.Stack, sf *stack.StackFile, action Action) (*modifyview.ConflictInfo, error) {
 	index := s.IndexOf(action.Branch)
 	if index < 0 || s.Branches[index].IsSkipped() {
 		return nil, fmt.Errorf("cannot normalize fold receiver %s", action.Branch)
@@ -102,7 +102,7 @@ func normalizeFoldReceiver(dir string, state *StateFile, s *stack.Stack, sf *sta
 	}
 	state.PendingAction = &action
 	state.AffectsPRs = state.AffectsPRs || s.Branches[index].PullRequest != nil
-	return rebaseInOwner(dir, state, s, sf, action.Branch, base, cutoff)
+	return rebaseInOwner(cfg, dir, state, s, sf, action.Branch, base, cutoff)
 }
 
 func applyRename(cfg *config.Config, dir string, state *StateFile, s *stack.Stack, sf *stack.StackFile, action Action, result *modifyview.ApplyResult) error {
