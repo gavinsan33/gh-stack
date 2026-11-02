@@ -521,6 +521,13 @@ func MergeBaseForkPoint(ref, branch string) (string, error) {
 	return ops.MergeBaseForkPoint(ref, branch)
 }
 
+// PatchEquivalentCommit returns the newest commit in commit..branch with the
+// same stable patch-id as commit, i.e. branch's copy of commit after a rewrite
+// that kept its diff. It returns "" without an error when there is none.
+func PatchEquivalentCommit(commit, branch string) (string, error) {
+	return ops.PatchEquivalentCommit(commit, branch)
+}
+
 // CommitExists reports whether ref resolves to a locally available commit.
 func CommitExists(ref string) (bool, error) {
 	return ops.CommitExists(ref)

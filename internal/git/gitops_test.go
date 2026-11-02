@@ -139,6 +139,37 @@ func TestIntegration_RebaseBoundaryLookups(t *testing.T) {
 	require.Error(t, err, "a lost worktree is not a missing commit")
 }
 
+func TestIntegration_PatchEquivalentCommit(t *testing.T) {
+	dir := setupLocalRepo(t)
+	restore := withGitDir(t, dir)
+	defer restore()
+	d := &defaultOps{}
+
+	gitExec(t, dir, "checkout", "-qb", "parent")
+	writeFile(t, dir, "parent.txt", "parent")
+	gitExec(t, dir, "add", ".")
+	gitExec(t, dir, "commit", "-qm", "parent")
+	parent := gitExec(t, dir, "rev-parse", "HEAD")
+
+	// A copy of parent with the same diff and a different SHA, as after a
+	// rebase on another machine.
+	gitExec(t, dir, "checkout", "-qb", "child", "main")
+	gitExec(t, dir, "cherry-pick", parent)
+	gitExec(t, dir, "commit", "-q", "--amend", "-m", "parent, rewritten")
+	copied := gitExec(t, dir, "rev-parse", "HEAD")
+	writeFile(t, dir, "child.txt", "child")
+	gitExec(t, dir, "add", ".")
+	gitExec(t, dir, "commit", "-qm", "child")
+
+	got, err := d.PatchEquivalentCommit(parent, "child")
+	require.NoError(t, err)
+	assert.Equal(t, copied, got)
+
+	got, err = d.PatchEquivalentCommit(parent, "main")
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
 // withGitDir temporarily sets the git client to operate in dir by changing
 // the working directory. Returns a restore function.
 func withGitDir(t *testing.T, dir string) func() {

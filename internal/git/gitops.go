@@ -69,6 +69,7 @@ type Ops interface {
 	RevParseMulti(refs []string) ([]string, error)
 	MergeBase(a, b string) (string, error)
 	MergeBaseForkPoint(ref, branch string) (string, error)
+	PatchEquivalentCommit(commit, branch string) (string, error)
 	Log(ref string, maxCount int) ([]CommitInfo, error)
 	LogRange(base, head string) ([]CommitInfo, error)
 	DiffStatRange(base, head string) (additions, deletions int, err error)
@@ -577,6 +578,48 @@ func (d *defaultOps) MergeBaseForkPoint(ref, branch string) (string, error) {
 		return "", nil
 	}
 	return point, err
+}
+
+func (d *defaultOps) PatchEquivalentCommit(commit, branch string) (string, error) {
+	want, err := d.patchIDs(commit + "^!")
+	if err != nil || len(want) != 1 {
+		return "", err
+	}
+	candidates, err := d.patchIDs(commit + ".." + branch)
+	if err != nil {
+		return "", err
+	}
+	for _, c := range candidates { // newest first
+		if c[0] == want[0][0] {
+			return c[1], nil
+		}
+	}
+	return "", nil
+}
+
+// patchIDs returns [patch-id, commit] pairs for the non-merge commits in revs.
+func (d *defaultOps) patchIDs(revs ...string) ([][2]string, error) {
+	args := append([]string{"log", "-p", "--no-merges", "--no-color", "--no-ext-diff", "--no-textconv", "--format=commit %H"}, revs...)
+	diff, err := d.runRaw(args...)
+	if err != nil {
+		return nil, err
+	}
+	cmd, err := d.command("patch-id", "--stable")
+	if err != nil {
+		return nil, err
+	}
+	cmd.Stdin = strings.NewReader(diff)
+	out, err := cmd.Output()
+	if err != nil {
+		return nil, err
+	}
+	var ids [][2]string
+	for _, line := range strings.Split(string(out), "\n") {
+		if f := strings.Fields(line); len(f) == 2 {
+			ids = append(ids, [2]string{f[0], f[1]})
+		}
+	}
+	return ids, nil
 }
 
 func (d *defaultOps) Log(ref string, maxCount int) ([]CommitInfo, error) {
