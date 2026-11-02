@@ -1494,6 +1494,24 @@ func resolveRebaseOldBase(currentParentTip, recordedBase, newBase, branch string
 	if forkValid {
 		return forkPoint, nil
 	}
+	// The branch may sit on a rewritten copy of its old parent (rebased
+	// elsewhere and fetched), which no reflog here has seen. Its copy of the
+	// old parent tip is then the boundary.
+	for _, old := range []string{recordedBase, currentParentTip} {
+		if old == "" {
+			continue
+		}
+		if exists, err := git.CommitExists(old); err != nil || !exists {
+			continue
+		}
+		copied, err := git.PatchEquivalentCommit(old, branch)
+		if err != nil {
+			return "", fmt.Errorf("finding %s's copy of its previous base %s: %w", branch, old, err)
+		}
+		if copied != "" {
+			return copied, nil
+		}
+	}
 
 	return "", fmt.Errorf(
 		"could not determine the previous base of %s after %s changed; rebase this branch manually",

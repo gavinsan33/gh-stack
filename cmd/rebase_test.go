@@ -2213,6 +2213,23 @@ func TestResolveRebaseOldBase(t *testing.T) {
 		assert.Equal(t, "old-parent", oldBase)
 	})
 
+	t.Run("uses the branch's copy of a parent rewritten elsewhere", func(t *testing.T) {
+		restore := git.SetOps(&git.MockOps{
+			IsAncestorFn: func(string, string) (bool, error) { return false, nil },
+			PatchEquivalentFn: func(commit, branch string) (string, error) {
+				if commit == "recorded-base" && branch == "child" {
+					return "copied-parent", nil
+				}
+				return "", nil
+			},
+		})
+		defer restore()
+
+		oldBase, err := resolveRebaseOldBase("recorded-base", "recorded-base", "parent", "child")
+		require.NoError(t, err)
+		assert.Equal(t, "copied-parent", oldBase)
+	})
+
 	t.Run("fails when no safe boundary can be recovered", func(t *testing.T) {
 		restore := git.SetOps(&git.MockOps{
 			IsAncestorFn: func(string, string) (bool, error) { return false, nil },
