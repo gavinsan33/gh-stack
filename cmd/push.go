@@ -11,8 +11,9 @@ import (
 )
 
 type pushOptions struct {
-	remote   string
-	noAtomic bool
+	remote          string
+	noAtomic        bool
+	overwriteRemote bool
 }
 
 func PushCmd(cfg *config.Config) *cobra.Command {
@@ -25,7 +26,12 @@ func PushCmd(cfg *config.Config) *cobra.Command {
 
 Uses explicit per-branch --force-with-lease checks and atomic updates: all
 branch updates succeed or fail together. Use --no-atomic to allow partial updates.
-Merged and queued branches are automatically skipped.`,
+Merged and queued branches are automatically skipped.
+
+If a branch's remote has commits pushed since your last push that the local
+branch doesn't have (other than rewritten copies of your own commits, or trunk
+merges), nothing is pushed and they are listed. Use --overwrite-remote to
+discard them.`,
 		Example: `  # Push active stack branches to the default remote
   $ gh stack push
 
@@ -38,6 +44,7 @@ Merged and queued branches are automatically skipped.`,
 
 	cmd.Flags().StringVar(&opts.remote, "remote", "", "Remote to push to (defaults to auto-detected remote)")
 	cmd.Flags().BoolVar(&opts.noAtomic, "no-atomic", os.Getenv("GH_STACK_NO_ATOMIC") != "", "Disable atomic pushes (also set by GH_STACK_NO_ATOMIC)")
+	cmd.Flags().BoolVar(&opts.overwriteRemote, "overwrite-remote", false, "Push even if it discards commits others pushed since your last push")
 
 	return cmd
 }
@@ -109,11 +116,15 @@ func runPush(cfg *config.Config, opts *pushOptions) error {
 	// in shallow clones). Silently ignored if branches don't exist on the
 	// remote yet.
 	_ = git.FetchBranches(remote, activeBranches)
+	if !checkRemoteRewrites(cfg, s, remote, activeBranches, opts.overwriteRemote) {
+		return ErrSilent
+	}
 	cfg.Printf("Pushing %d %s to %s...", len(activeBranches), plural(len(activeBranches), "branch", "branches"), remote)
 	if err := git.Push(remote, activeBranches, true, !opts.noAtomic); err != nil {
 		cfg.Errorf("failed to push: %s", err)
 		return ErrSilent
 	}
+	recordPushed(s, activeBranches)
 
 	// Update base commit hashes after push
 	updateBaseSHAs(s)

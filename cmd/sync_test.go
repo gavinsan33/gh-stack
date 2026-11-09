@@ -1028,6 +1028,53 @@ func TestSync_PushFailureAfterRebase(t *testing.T) {
 	assert.Contains(t, output, "Push failed")
 }
 
+// A force push after a rebase must not discard commits someone else pushed
+// since this clone's last push; sync warns and pushes nothing.
+func TestSync_RebasedPushRefusesToDiscardOthersCommits(t *testing.T) {
+	s := stack.Stack{
+		Trunk:    stack.BranchRef{Branch: "main"},
+		Branches: []stack.BranchRef{{Branch: "b1", Pushed: "old-b1"}},
+	}
+	tmpDir := t.TempDir()
+	writeStackFile(t, tmpDir, s)
+
+	var pushCalls []pushCall
+	mock := newSyncMock(tmpDir, "b1")
+	mock.RevParseFn = func(ref string) (string, error) {
+		if ref == "main" {
+			return "local-sha", nil // trunk behind remote -> rebase
+		}
+		return "sha-" + ref, nil
+	}
+	mock.IsAncestorFn = func(a, d string) (bool, error) { return true, nil }
+	mock.UpdateBranchRefFn = func(string, string) error { return nil }
+	mock.CheckoutBranchFn = func(string) error { return nil }
+	mock.RebaseFn = func(string, git.RebaseOpts) error { return nil }
+	mock.RebaseOntoFn = func(string, string, string, git.RebaseOpts) error { return nil }
+	mock.UnmatchedCommitsFn = func(head string, known []string, exclude string) ([]string, error) {
+		return []string{"fix0000000"}, nil
+	}
+	mock.PushFn = func(remote string, branches []string, force, atomic bool) error {
+		pushCalls = append(pushCalls, pushCall{remote, branches, force, atomic})
+		return nil
+	}
+	restore := git.SetOps(mock)
+	defer restore()
+
+	cfg, _, errR := config.NewTestConfig()
+	cmd := SyncCmd(cfg)
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	err := cmd.Execute()
+	cfg.Err.Close()
+	errOut, _ := io.ReadAll(errR)
+
+	assert.NoError(t, err)
+	assert.Empty(t, pushCalls)
+	assert.Contains(t, string(errOut), "since your last push")
+	assert.Contains(t, string(errOut), "Nothing was pushed")
+}
+
 // TestSync_BranchFastForward_TriggersRebase verifies that when trunk hasn't
 // moved but a stack branch has new remote commits, the branch is fast-forwarded,
 // downstream branches are cascade-rebased, and force push is used.

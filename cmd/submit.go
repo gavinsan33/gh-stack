@@ -23,10 +23,11 @@ import (
 )
 
 type submitOptions struct {
-	auto     bool
-	open     bool
-	remote   string
-	noAtomic bool
+	auto            bool
+	open            bool
+	remote          string
+	noAtomic        bool
+	overwriteRemote bool
 }
 
 func SubmitCmd(cfg *config.Config) *cobra.Command {
@@ -75,6 +76,7 @@ In the editor, new PRs default to ready for review; switch any to draft with the
 	cmd.Flags().BoolVar(&opts.open, "open", false, "Mark new and existing PRs as ready for review")
 	cmd.Flags().StringVar(&opts.remote, "remote", "", "Remote to push to (defaults to auto-detected remote)")
 	cmd.Flags().BoolVar(&opts.noAtomic, "no-atomic", os.Getenv("GH_STACK_NO_ATOMIC") != "", "Disable atomic pushes (also set by GH_STACK_NO_ATOMIC)")
+	cmd.Flags().BoolVar(&opts.overwriteRemote, "overwrite-remote", false, "Push even if it discards commits others pushed since your last push")
 
 	return cmd
 }
@@ -250,11 +252,15 @@ func runSubmit(cfg *config.Config, opts *submitOptions) error {
 	}
 
 	if len(activeBranches) > 0 {
+		if !checkRemoteRewrites(cfg, s, remote, activeBranches, opts.overwriteRemote) {
+			return ErrSilent
+		}
 		cfg.Printf("Pushing to %s...", remote)
 		if err := git.Push(remote, activeBranches, true, !opts.noAtomic); err != nil {
 			cfg.Errorf("failed to push: %s", err)
 			return ErrSilent
 		}
+		recordPushed(s, activeBranches)
 	}
 
 	allPRsSubmitted := len(queued) == 0
