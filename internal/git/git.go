@@ -528,6 +528,14 @@ func PatchEquivalentCommit(commit, branch string) (string, error) {
 	return ops.PatchEquivalentCommit(commit, branch)
 }
 
+// UnmatchedCommits returns the non-merge commits reachable from head but not
+// from known or exclude whose diff isn't patch-equivalent to a commit
+// reachable from known (and not exclude): commits only head has, as opposed to
+// a rewritten copy of known's. Newest first.
+func UnmatchedCommits(head string, known []string, exclude string) ([]string, error) {
+	return ops.UnmatchedCommits(head, known, exclude)
+}
+
 // CommitExists reports whether ref resolves to a locally available commit.
 func CommitExists(ref string) (bool, error) {
 	return ops.CommitExists(ref)

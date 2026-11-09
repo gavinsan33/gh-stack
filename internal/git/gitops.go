@@ -70,6 +70,7 @@ type Ops interface {
 	MergeBase(a, b string) (string, error)
 	MergeBaseForkPoint(ref, branch string) (string, error)
 	PatchEquivalentCommit(commit, branch string) (string, error)
+	UnmatchedCommits(head string, known []string, exclude string) ([]string, error)
 	Log(ref string, maxCount int) ([]CommitInfo, error)
 	LogRange(base, head string) ([]CommitInfo, error)
 	DiffStatRange(base, head string) (additions, deletions int, err error)
@@ -595,6 +596,38 @@ func (d *defaultOps) PatchEquivalentCommit(commit, branch string) (string, error
 		}
 	}
 	return "", nil
+}
+
+func (d *defaultOps) UnmatchedCommits(head string, known []string, exclude string) ([]string, error) {
+	revs := []string{head}
+	var knownRevs []string
+	for _, k := range known {
+		revs = append(revs, "^"+k)
+		knownRevs = append(knownRevs, k)
+	}
+	if exclude != "" {
+		revs = append(revs, "^"+exclude)
+		knownRevs = append(knownRevs, "^"+exclude)
+	}
+	candidates, err := d.patchIDs(revs...)
+	if err != nil || len(candidates) == 0 {
+		return nil, err
+	}
+	seen, err := d.patchIDs(knownRevs...)
+	if err != nil {
+		return nil, err
+	}
+	ids := make(map[string]bool, len(seen))
+	for _, c := range seen {
+		ids[c[0]] = true
+	}
+	var unmatched []string
+	for _, c := range candidates {
+		if !ids[c[0]] {
+			unmatched = append(unmatched, c[1])
+		}
+	}
+	return unmatched, nil
 }
 
 // patchIDs returns [patch-id, commit] pairs for the non-merge commits in revs.
