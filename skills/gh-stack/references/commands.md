@@ -59,6 +59,10 @@ All branch updates succeed or fail together. `push`, `submit`, `sync`, and `link
 opts out by default; `--no-atomic=false` overrides the environment. Failed atomic pushes never
 automatically retry non-atomically.
 
+`push`, `submit`, and `sync` refuse a force push that would discard commits pushed to a branch
+since this clone's last push that the local branch lacks, and list them. Add them to the local
+branch, or pass `--overwrite-remote` to discard them.
+
 `push` never creates or updates pull requests. Use `submit` for that.
 
 ## submit
