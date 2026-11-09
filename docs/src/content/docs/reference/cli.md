@@ -349,6 +349,7 @@ gh stack submit [flags]
 | `--open` | Create new PRs as ready for review instead of drafts, and mark existing PRs as ready for review |
 | `--remote <name>` | Remote to push to (defaults to auto-detected remote) |
 | `--no-atomic` | Allow partial branch updates |
+| `--overwrite-remote` | Push even if it discards commits others pushed since your last push |
 
 Pushes all active branches together atomically before creating PRs or setting their final bases. For pending reorders, at-risk PRs temporarily target the trunk while branches are pushed. After creating PRs, `submit` automatically creates a **Stack** on GitHub to link the PRs together. If the stack already exists on GitHub (e.g., from a previous submit), new PRs are added to the existing stack. Atomicity applies to Git branch updates, not PR or stack API operations.
 
@@ -387,6 +388,7 @@ gh stack sync [flags]
 | `--prune` | Delete local branches for merged PRs |
 | `--accept-base-change` | Rebase onto a base GitHub retargeted the stack to, even if the old base did not merge |
 | `--no-atomic` | Allow partial branch updates |
+| `--overwrite-remote` | Push even if it discards commits others pushed since your last push |
 
 Performs a synchronization of the entire stack:
 
@@ -505,8 +507,9 @@ gh stack push [flags]
 |------|-------------|
 | `--remote <name>` | Remote to push to (defaults to auto-detected remote) |
 | `--no-atomic` | Allow partial branch updates |
+| `--overwrite-remote` | Push even if it discards commits others pushed since your last push |
 
-Pushes every active branch (excluding merged and queued branches) in one atomic `git push` using explicit per-branch `--force-with-lease` checks. All branch updates succeed or fail together. Use `--no-atomic` to allow partial branch updates. Failed atomic pushes never automatically retry non-atomically. This command does not create or update pull requests — use `gh stack submit` for that.
+Pushes every active branch (excluding merged and queued branches) in one atomic `git push` using explicit per-branch `--force-with-lease` checks. All branch updates succeed or fail together. Use `--no-atomic` to allow partial branch updates. Failed atomic pushes never automatically retry non-atomically. A lease alone can't protect others' work here, since the remote is fetched just before pushing, so a branch whose remote gained commits since your last push that your branch lacks (other than rewritten copies of your own commits, trunk commits, or merges) blocks the push and is listed; `--overwrite-remote` discards them. `submit` and `sync` check the same way. This command does not create or update pull requests — use `gh stack submit` for that.
 
 **Examples:**
 
