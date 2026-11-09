@@ -30,9 +30,12 @@ type PullRequestRef struct {
 // For stacked branches, Base stores the parent branch's HEAD SHA
 // at the time of last sync/rebase, used to identify unique commits.
 type BranchRef struct {
-	Branch      string          `json:"branch"`
-	Head        string          `json:"head,omitempty"`
-	Base        string          `json:"base,omitempty"`
+	Branch string `json:"branch"`
+	Head   string `json:"head,omitempty"`
+	Base   string `json:"base,omitempty"`
+	// Pushed is the SHA this clone last pushed for the branch: the baseline
+	// a force push checks the remote against (see checkRemoteRewrites).
+	Pushed      string          `json:"pushed,omitempty"`
 	PullRequest *PullRequestRef `json:"pullRequest,omitempty"`
 
 	// Queued is a transient (not persisted) flag indicating the branch's

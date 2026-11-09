@@ -62,6 +62,10 @@
           "type": "string",
           "description": "The parent branch's HEAD SHA at the time of last sync/rebase. Used to identify which commits are unique to this branch."
         },
+        "pushed": {
+          "type": "string",
+          "description": "The SHA this clone last pushed for the branch. A force push refuses to discard remote commits made since then that the local branch doesn't have."
+        },
         "pullRequest": {
           "$ref": "#/$defs/pullRequestRef",
           "description": "Associated pull request information, if a PR exists for this branch."
