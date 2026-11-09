@@ -47,6 +47,7 @@ type MockOps struct {
 	MergeBaseFn              func(string, string) (string, error)
 	MergeBaseForkPointFn     func(string, string) (string, error)
 	PatchEquivalentFn        func(string, string) (string, error)
+	UnmatchedCommitsFn       func(string, []string, string) ([]string, error)
 	LogFn                    func(string, int) ([]CommitInfo, error)
 	LogRangeFn               func(string, string) ([]CommitInfo, error)
 	DiffStatRangeFn          func(string, string) (int, int, error)
@@ -343,6 +344,13 @@ func (m *MockOps) PatchEquivalentCommit(commit, branch string) (string, error) {
 		return m.PatchEquivalentFn(commit, branch)
 	}
 	return "", nil
+}
+
+func (m *MockOps) UnmatchedCommits(head string, known []string, exclude string) ([]string, error) {
+	if m.UnmatchedCommitsFn != nil {
+		return m.UnmatchedCommitsFn(head, known, exclude)
+	}
+	return nil, nil
 }
 
 func (m *MockOps) Log(ref string, maxCount int) ([]CommitInfo, error) {

@@ -170,6 +170,48 @@ func TestIntegration_PatchEquivalentCommit(t *testing.T) {
 	assert.Empty(t, got)
 }
 
+func TestIntegration_UnmatchedCommits(t *testing.T) {
+	dir := setupLocalRepo(t)
+	restore := withGitDir(t, dir)
+	defer restore()
+	d := &defaultOps{}
+
+	gitExec(t, dir, "checkout", "-qb", "feature")
+	writeFile(t, dir, "a.txt", "a")
+	gitExec(t, dir, "add", ".")
+	gitExec(t, dir, "commit", "-qm", "a")
+	pushed := gitExec(t, dir, "rev-parse", "HEAD")
+
+	// Someone else rewrites the branch with the same diff (new SHA), merges
+	// trunk into it, and adds a commit of their own.
+	gitExec(t, dir, "checkout", "-q", "main")
+	writeFile(t, dir, "trunk.txt", "trunk")
+	gitExec(t, dir, "add", ".")
+	gitExec(t, dir, "commit", "-qm", "trunk")
+	gitExec(t, dir, "checkout", "-qb", "theirs", "main~1")
+	gitExec(t, dir, "cherry-pick", pushed)
+	gitExec(t, dir, "commit", "-q", "--amend", "-m", "a, rewritten")
+	gitExec(t, dir, "merge", "-q", "--no-edit", "main")
+	got, err := d.UnmatchedCommits("theirs", []string{pushed}, "main")
+	require.NoError(t, err)
+	assert.Empty(t, got, "a rewritten copy and a trunk merge aren't anyone's new work")
+
+	writeFile(t, dir, "fix.txt", "fix")
+	gitExec(t, dir, "add", ".")
+	gitExec(t, dir, "commit", "-qm", "reviewer fix")
+	fix := gitExec(t, dir, "rev-parse", "HEAD")
+	got, err = d.UnmatchedCommits("theirs", []string{pushed}, "main")
+	require.NoError(t, err)
+	assert.Equal(t, []string{fix}, got)
+
+	// Once local has an equivalent of the fix, it isn't unmatched.
+	gitExec(t, dir, "checkout", "-q", "feature")
+	gitExec(t, dir, "cherry-pick", fix)
+	got, err = d.UnmatchedCommits("theirs", []string{pushed, "feature"}, "main")
+	require.NoError(t, err)
+	assert.Empty(t, got)
+}
+
 // withGitDir temporarily sets the git client to operate in dir by changing
 // the working directory. Returns a restore function.
 func withGitDir(t *testing.T, dir string) func() {
