@@ -20,6 +20,7 @@ type syncOptions struct {
 	prune            bool
 	acceptBaseChange bool
 	noAtomic         bool
+	overwriteRemote  bool
 }
 
 func SyncCmd(cfg *config.Config) *cobra.Command {
@@ -83,6 +84,7 @@ the first active branch in the stack, or the trunk if all are merged.`,
 	cmd.Flags().BoolVar(&opts.prune, "prune", false, "Delete local branches for merged PRs")
 	cmd.Flags().BoolVar(&opts.acceptBaseChange, "accept-base-change", false, "Rebase onto a retargeted base even if the old base did not merge")
 	cmd.Flags().BoolVar(&opts.noAtomic, "no-atomic", os.Getenv("GH_STACK_NO_ATOMIC") != "", "Disable atomic pushes (also set by GH_STACK_NO_ATOMIC)")
+	cmd.Flags().BoolVar(&opts.overwriteRemote, "overwrite-remote", false, "Push even if it discards commits others pushed since your last push")
 
 	return cmd
 }
@@ -318,20 +320,26 @@ func runSync(cfg *config.Config, opts *syncOptions) error {
 		cfg.Printf("No active branches to push (all merged)")
 	} else {
 		// After rebase, force-with-lease is required (history rewritten).
-		// Without rebase, try a normal push first.
+		// Without rebase, try a normal push first. A forced one mustn't
+		// discard commits others pushed (checkRemoteRewrites).
 		force := rebased
-		cfg.Printf("Pushing %d %s to %s...", len(branches), plural(len(branches), "branch", "branches"), remote)
-		if err := git.Push(remote, branches, force, !opts.noAtomic); err != nil {
-			if !force {
-				cfg.Warningf("Push failed — branches may need force push after rebase")
-				cfg.Printf("  Run `%s` to push with --force-with-lease.",
-					cfg.ColorAccent("gh stack push"))
-			} else {
-				cfg.Warningf("Push failed: %v", err)
-				cfg.Printf("  Run `%s` to retry.", cfg.ColorAccent("gh stack push"))
-			}
+		if force && !checkRemoteRewrites(cfg, s, remote, branches, opts.overwriteRemote) {
+			cfg.Warningf("Nothing was pushed")
 		} else {
-			cfg.Successf("Pushed %d branches", len(branches))
+			cfg.Printf("Pushing %d %s to %s...", len(branches), plural(len(branches), "branch", "branches"), remote)
+			if err := git.Push(remote, branches, force, !opts.noAtomic); err != nil {
+				if !force {
+					cfg.Warningf("Push failed — branches may need force push after rebase")
+					cfg.Printf("  Run `%s` to push with --force-with-lease.",
+						cfg.ColorAccent("gh stack push"))
+				} else {
+					cfg.Warningf("Push failed: %v", err)
+					cfg.Printf("  Run `%s` to retry.", cfg.ColorAccent("gh stack push"))
+				}
+			} else {
+				recordPushed(s, branches)
+				cfg.Successf("Pushed %d branches", len(branches))
+			}
 		}
 	}
 
